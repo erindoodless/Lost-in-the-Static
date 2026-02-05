@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Lost in the Static - An interactive story with scene transitions, interactions, and sound effects.">
+    <meta name="keywords" content="interactive story, digital art, technology addiction, cats, comic, music, minigame, text adventure, sentence reconstruction, text effects, choice">
+    <meta name="author" content="Erin McEwan">
+    <meta property="og:title" content="Lost in the Static">
+    <meta property="og:description" content="An interactive story about technology addiction told through the eyes of a cat.">
+    <meta property="og:type" content="website">
+
+    <title>Lost in the Static</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        html, body { height: 100%; margin: 0; padding: 0; }
+        body {
+            font-family: 'Lato', sans-serif; background-color: #0a0a0a; color: #e0e0e0;
+            user-select: none; min-height: 100vh; display: flex; flex-direction: column;
+            cursor: default;
+            padding-bottom: 8rem;
+            overflow-x: hidden; overflow-y: auto;
+            transition: padding-bottom 0.3s ease-in-out;
+        }
+        body.choice-active-padding {
+            padding-bottom: 14rem;
+        }
+        body.can-advance.story-active { cursor: pointer; }
+        main {
+            flex-grow: 1; position: relative; z-index: 10; width: 100%;
+            padding-top: 2rem; padding-left: 1rem; padding-right: 1rem;
+        }
+        .hidden { display: none !important; }
+        .skip-link { position: absolute; top: -40px; left: 0; background: #00FFFF; color: #111; padding: 8px; z-index: 100; transition: top 0.3s; border-radius: 0 0 4px 0; }
+        .skip-link:focus { top: 0; }
+        @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
+        .fade-in-start { opacity: 0; transform: translateY(-20px); animation: fadeIn 1s ease-out forwards; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-spinner { width: 50px; height: 50px; border: 3px solid #00FFFF; border-radius: 50%; border-top-color: transparent; animation: spin 1s linear infinite; }
+        #title-screen { position: fixed; inset: 0; background-color: #000; color: #00FFFF; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; transition: opacity 1s ease-out; z-index: 1001; cursor: pointer; }
+        #loadingOverlay { position: fixed; inset: 0; background-color: rgba(0,0,0,0.9); display: flex; justify-content: center; align-items: center; transition: opacity 0.5s ease-out; opacity: 1; z-index: 1000; }
+        #scene-container { width: 100%; position: relative; padding-bottom: 5rem; min-height: 80vh; }
+
+        .scene {
+            padding: 1.5rem; max-width: 800px; margin: 0 auto 4rem auto; background: rgba(10, 10, 10, 0.7);
+            border-radius: 0.75rem; box-shadow: 0 8px 15px rgba(0, 255, 255, 0.15); width: 95%;
+            position: absolute; left: 50%; transform: translateX(-50%); top: 0;
+            visibility: hidden; border: 1px solid rgba(0, 255, 255, 0.1);
+        }
+         .scene .panel {
+             margin: 0; padding: 0;
+             position: static;
+             z-index: auto;
+             width: auto;
+             height: auto;
+        }
+        .scene img {
+            max-height: 60vh;
+            object-fit: contain;
+            width: 100%;
+            border-radius: 0.5rem;
+            box-shadow: 0px 0px 12px rgba(0, 255, 255, 0.25);
+            transition: box-shadow 0.3s ease;
+            margin-bottom: 1.5rem;
+            animation: subtleZoom 20s infinite ease-in-out;
+            position: static;
+        }
+
+        .scene.active {
+             visibility: visible; animation: dramaticFadeIn 0.8s ease-out forwards; z-index: 11;
+        }
+        .scene.exiting {
+            visibility: visible; animation: dramaticFadeOut 0.8s ease-in forwards; z-index: 10;
+        }
+        @keyframes dramaticFadeIn {
+            0% { opacity: 0; transform: translateX(-50%) translateY(10px) scale(0.98); filter: blur(4px); }
+            100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); filter: blur(0px); }
+        }
+        @keyframes dramaticFadeOut {
+            0% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); filter: blur(0px); }
+            100% { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.98); filter: blur(4px); }
+        }
+        @keyframes subtleZoom { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.015); } }
+
+
+        .scene-text {
+            font-size: 1.15rem; color: #e5e7eb; line-height: 1.8;
+            background: rgba(0, 0, 0, 0.85);
+            border-left: 5px solid #00FFFF;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            user-select: text; cursor: auto;
+            padding: 1.5rem 2rem; border-radius: 0.5rem; opacity: 0;
+            transition: opacity 0.7s ease-in;
+            word-wrap: break-word; margin-top: 1.5rem;
+            text-shadow: 0 0 3px rgba(200, 200, 200, 0.1);
+            margin-bottom: 2rem;
+        }
+        .scene-text.revealed { opacity: 1; }
+
+        .choice-consequence-text {
+            font-size: 1.0rem;
+            color: #a5f3fc;
+            font-style: italic;
+            text-align: center;
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            padding: 0.5rem 1rem;
+            background-color: rgba(14, 116, 144, 0.2);
+            border-left: 3px solid #67e8f9;
+            border-radius: 0.25rem;
+        }
+
+        .click-to-continue {
+            color: #a5f3fc; font-style: italic; font-size: 1rem; margin-top: 2rem; text-align: center;
+            opacity: 0; transition: opacity 0.3s ease-in-out, background-color 0.2s;
+            visibility: hidden; padding: 0.5rem 1rem; border-radius: 0.25rem;
+            display: inline-block; border: 1px dashed rgba(0, 255, 255, 0.3);
+            margin-bottom: 0;
+        }
+        body.can-advance .click-to-continue.visible {
+            opacity: 1; font-weight: bold; animation: pulse-fade 1.5s infinite ease-in-out;
+            visibility: visible; background-color: rgba(0, 255, 255, 0.1);
+        }
+        body.can-advance .click-to-continue.visible:hover {
+             background-color: rgba(0, 255, 255, 0.2); border-color: rgba(0, 255, 255, 0.5);
+        }
+        @keyframes pulse-fade { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(0.99); } }
+
+        .minigame-container {
+            border: 1px solid #005f5f; background-color: rgba(0, 20, 20, 0.6);
+            padding: 2rem; margin-top: 2rem; border-radius: 0.75rem; text-align: center;
+            box-shadow: 0 6px 12px rgba(0, 80, 80, 0.3);
+            margin-bottom: 4rem;
+        }
+        .game-prompt { color: #93c5fd; margin-bottom: 1.5rem; font-size: 1.25rem; text-shadow: 0 0 5px rgba(147, 197, 253, 0.3); display: inline-block; }
+        .hint-button {
+            display: inline-block; margin-left: 0.75rem;
+            background-color: rgba(14, 116, 144, 0.5); color: #e0f2fe;
+            border: 1px solid rgba(6, 182, 212, 0.6); width: 1.75rem; height: 1.75rem;
+            border-radius: 50%; cursor: pointer; font-weight: bold; font-size: 0.9rem;
+            line-height: 1.5rem; text-align: center; transition: all 0.2s ease;
+            vertical-align: middle;
+        }
+        .hint-button:hover { background-color: rgba(6, 182, 212, 0.7); border-color: rgba(103, 232, 249, 0.8); transform: scale(1.1); }
+        .hint-button:disabled { opacity: 0.4; cursor: not-allowed; transform: scale(1); background-color: rgba(55, 65, 81, 0.5); border-color: rgba(75, 85, 99, 0.6); }
+        .constructed-sentence {
+            min-height: 3.5em; padding: 1rem; border: 2px dashed #0e7490; border-radius: 0.5rem;
+            margin-bottom: 2rem; color: #f0f9ff; font-style: italic; user-select: none;
+            overflow-wrap: break-word; background-color: rgba(10, 10, 10, 0.7);
+            display: flex; align-items: center; justify-content: center; text-align: center; font-size: 1.1rem;
+            cursor: pointer;
+        }
+        .phrase-buttons { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; margin-bottom: 1.5rem; }
+        .phrase-button { background-color: #0e7490; color: white; border: 1px solid #06b6d4; padding: 0.75rem 1.5rem; border-radius: 0.375rem; cursor: pointer; transition: all 0.2s ease; font-size: 1rem; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3); }
+        .phrase-button:hover { background-color: #06b6d4; border-color: #67e8f9; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); }
+        .phrase-button:active { transform: translateY(0); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
+        .phrase-button:disabled { opacity: 0.5; cursor: not-allowed; background-color: #374151; border-color: #4b5563; box-shadow: none; transform: none; }
+        .game-feedback { margin-top: 1rem; font-size: 1.05rem; font-weight: bold; min-height: 1.5em; }
+        .try-again-button { background-color: #be123c; color: white; border: 1px solid #f43f5e; padding: 0.75rem 1.5rem; border-radius: 0.375rem; cursor: pointer; margin-top: 1rem; transition: all 0.2s ease; font-size: 1rem; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3); }
+        .try-again-button:hover { background-color: #e11d48; border-color: #fb7185; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); }
+        .try-again-button:active { transform: translateY(0); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
+
+        @keyframes static-noise { 0% { background-position: 0 0; } 10% { background-position: -5% -10%; } 20% { background-position: -15% 5%; } 30% { background-position: 7% -25%; } 40% { background-position: 20% 25%; } 50% { background-position: -25% 10%; } 60% { background-position: 15% 5%; } 70% { background-position: 0 15%; } 80% { background-position: 25% 35%; } 90% { background-position: -10% 10%; } 100% { background-position: 0 0; } }
+        body.static-effect::before { content: ""; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 800'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E"); background-repeat: repeat; background-size: 200px 200px; opacity: 0.03; pointer-events: none; z-index: 1000; animation: static-noise 0.2s linear infinite; will-change: background-position; }
+
+        .choice-container-dynamic {
+            border: 1px solid #005f5f; background-color: rgba(0, 20, 20, 0.6);
+            padding: 2rem; margin-top: 2rem; border-radius: 0.75rem; text-align: center; box-shadow: 0 6px 12px rgba(0, 80, 80, 0.3);
+            position: relative; z-index: 15; width: 95%; max-width: 600px; margin-left: auto; margin-right: auto;
+            margin-bottom: 2rem;
+        }
+        #choice-prompt { font-size: 1.3rem; color: #93c5fd; margin-bottom: 1.5rem; line-height: 1.6; text-shadow: 0 0 5px rgba(147, 197, 253, 0.3); }
+        #choice-buttons { display: flex; flex-direction: column; gap: 1rem; align-items: stretch; }
+        #choice-buttons .choice-button { background-color: #0e7490; color: white; border: 1px solid #06b6d4; padding: 1rem 1.5rem; border-radius: 0.5rem; cursor: pointer; transition: all 0.2s ease; font-size: 1.1rem; width: 100%; text-align: left; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3); }
+         #choice-buttons .choice-button:hover { background-color: #06b6d4; border-color: #67e8f9; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); }
+         #choice-buttons .choice-button:active { transform: translateY(0); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
+         #choice-buttons .choice-button:disabled { opacity: 0.5; cursor: not-allowed; background-color: #374151; border-color: #4b5563; box-shadow: none; transform: none;}
+         #choice-outcome-text { margin-top: 2rem; border-left-color: #67e8f9; background: rgba(0, 0, 0, 0.85); padding: 1.5rem 2rem; border-radius: 0.5rem; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); }
+
+        @keyframes slideInFadeIn { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
+        .animate-entry { animation: slideInFadeIn 0.5s ease-out forwards; }
+
+        #endScreen {
+             position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: #000;
+             z-index: 45; opacity: 0; visibility: hidden;
+             transition: opacity 1.5s ease-in, visibility 0s 1.5s;
+             display: flex; flex-direction: column; justify-content: center; align-items: center;
+             text-align: center; padding: 3rem;
+        }
+        #endScreen.visible { opacity: 1; visibility: visible; transition-delay: 0s, 0s; }
+        #endMessageContainer { opacity: 1; background: transparent; padding: 0; border: none; box-shadow: none; margin-bottom: 2rem; max-width: 700px; }
+        #endCredits {
+            opacity: 1;
+            width: 100%; max-width: 600px;
+            height: auto;
+            overflow: visible;
+            position: relative;
+            border-top: 1px solid rgba(0, 255, 255, 0.1);
+            margin-top: 2rem; padding-top: 2rem;
+            mask-image: none; -webkit-mask-image: none;
+        }
+        #endCredits-content {
+            position: static;
+            bottom: auto; left: auto;
+            width: 100%; text-align: center; color: #b0b0b0; font-size: 1rem; line-height: 1.9;
+            animation: none;
+            will-change: auto;
+        }
+        #restartButton { background-color: #0e7490; color: white; border: 1px solid #06b6d4; padding: 0.8rem 2rem; border-radius: 0.375rem; cursor: pointer; transition: all 0.2s ease; font-size: 1.1rem; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3); display: inline-block; margin: 0 auto; }
+        #restartButton:hover { background-color: #06b6d4; border-color: #67e8f9; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); }
+        #restartButton:active { transform: translateY(0); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
+        #endCredits-content p { margin-bottom: 1rem; }
+        #endCredits-content strong { color: #e0e0e0; font-weight: bold; }
+        #tannerDedication { margin-top: 2.5rem; margin-bottom: 1rem; font-style: italic; color: #cccccc; }
+        #tannerImage { display: block; margin: 0 auto 1.5rem auto; width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(0, 255, 255, 0.3); box-shadow: 0 0 15px rgba(0, 255, 255, 0.2); filter: grayscale(50%) brightness(90%); opacity: 0.8; }
+
+        .progress-bar-container { position: fixed; bottom: 0; left: 0; width: 100%; height: 4px; background-color: rgba(0, 255, 255, 0.15); z-index: 20; }
+        #progressBar { height: 100%; background-color: #22d3ee; transition: width 0.3s ease-linear; width: 0%; box-shadow: 0 0 5px #22d3ee; }
+        #controlsHint { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.85); padding: 6px 15px; border-radius: 15px; font-size: 0.8rem; color: #a5f3fc; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 30; border: 1px solid rgba(0, 255, 255, 0.2); }
+
+        #navigation-controls {
+            position: fixed;
+            bottom: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 1rem;
+            background-color: rgba(10, 10, 10, 0.85);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            z-index: 50;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s ease-in-out, visibility 0s 0.5s;
+            transition-delay: 0.5s, 0.5s;
+        }
+        body.story-active #navigation-controls {
+            opacity: 1;
+            visibility: visible;
+            transition-delay: 0.5s, 0.5s;
+        }
+        .nav-button {
+            background-color: #0e7490;
+            color: white;
+            border: 1px solid #06b6d4;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.9rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        .nav-button:hover {
+            background-color: #06b6d4;
+            border-color: #67e8f9;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+        }
+         .nav-button:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        .nav-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background-color: #374151;
+            border-color: #4b5563;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .secret-ending {
+            filter: sepia(30%) brightness(95%);
+            border-color: rgba(200, 200, 200, 0.3);
+        }
+        .secret-ending img {
+             box-shadow: 0px 0px 8px rgba(200, 200, 200, 0.2);
+        }
+        .funny-ending {
+            border-color: rgba(255, 0, 255, 0.3);
+        }
+        @keyframes colorPulse {
+          0%, 100% { filter: hue-rotate(0deg) brightness(100%); }
+          50% { filter: hue-rotate(45deg) brightness(110%); }
+        }
+
+
+    </style>
+</head>
+
+<body class="bg-black text-white flex flex-col items-center min-h-screen">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-90 flex justify-center items-center transition-opacity duration-500 ease-out opacity-100 z-50">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <div id="title-screen" class="fixed inset: 0; background-color: #000; color: #00FFFF; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; transition: opacity 1s ease-out; z-index: 1001; cursor: pointer;" role="dialog" aria-label="Story title screen">
+        <h1 class="text-4xl font-black uppercase mb-5 fade-in-start">Lost in the Static</h1>
+        <p class="text-lg text-gray-300 mb-4">An interactive story</p>
+        <p class="text-md text-gray-400">Click or press Space/Enter to Begin</p>
+    </div>
+
+    <main id="main-content" class="w-full max-w-3xl mx-auto p-4 flex-grow flex flex-col items-center mt-5 opacity-0 transition-opacity duration-500">
+        <div id="scene-container" class="w-full flex flex-col items-center flex-grow relative" style="min-height: 80vh;">
+            <div class="scene w-full" data-scene-index="0"> <div class="panel"><img src="images/scene-02.png" alt="Scene 2" loading="lazy"></div> <p class="scene-text">I remember the way the carrier swayed in your hand that first day—</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="1"> <div class="panel"><img src="images/scene-03.png" alt="Scene 3" loading="lazy"></div> <p class="scene-text">You were so careful when you set it down,</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="2"> <div class="panel"><img src="images/scene-04.png" alt="Scene 4" loading="lazy"></div> <p class="scene-text">speaking in that soft voice humans use when they're trying not to frighten something wild.</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="3"> <div class="panel"><img src="images/scene-05.png" alt="Scene 5" loading="lazy"></div> <p class="scene-text">When you opened the bag, I didn't bolt. Something in your awkward gentleness made me pause.</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="4" data-choice-scene="true">
+                 <div class="panel"><img src="images/scene-06.png" alt="Scene 6" loading="lazy"></div>
+                 <p class="scene-text">You let me explore each corner of your world at my own pace,</p>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="5">
+                 <div class="panel"><img src="images/scene-07.png" alt="Scene 7" loading="lazy"></div>
+                 <p class="choice-consequence-text hidden"></p>
+                 <p class="scene-text">and I watched you watching me—</p>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="6"> <div class="panel"><img src="images/scene-08.png" alt="Scene 8" loading="lazy"></div> <p class="scene-text">your eyes still focused then,</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="7"> <div class="panel"><img src="images/scene-09.png" alt="Scene 9" loading="lazy"></div> <p class="scene-text">still seeing the real things in front of you.</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="8"> <div class="panel"><img src="images/scene-10.png" alt="Scene 10" loading="lazy"></div> <p class="scene-text">That first night, when you were using it, I demanded your attention.</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="9"> <div class="panel"><img src="images/scene-11.png" alt="Scene 11" loading="lazy"></div> <p class="scene-text">You shone a magic light,</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="10"> <div class="panel"><img src="images/scene-12.png" alt="Scene 12" loading="lazy"></div> <p class="scene-text">and it was worth chasing just to hear your laugh.</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="11" data-apply-static="true"> <div class="panel"><img src="images/scene-13.png" alt="Scene 13" loading="lazy"></div> <p class="scene-text">Then you started using it more. That sleek thing that would become your whole world...</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="12" data-apply-static="true" data-choice-scene="true">
+                 <div class="panel"><img src="images/scene-13.png" alt="Scene 13" loading="lazy"></div> <p class="scene-text">That sleek thing that would become your whole world...</p>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="13" data-apply-static="true" data-sentence-phrases="You thought I wouldn't notice|how it started" data-correct-sentence="You thought I wouldn't notice how it started">
+                <div class="panel"><img src="images/scene-14.png" alt="Scene 14" loading="lazy"></div>
+                <p class="choice-consequence-text hidden"></p>
+                <div class="minigame-container hidden animate-entry"> <p class="game-prompt mb-3">Click the phrases below to reconstruct the thought:</p><button class="hint-button" title="Get a hint">?</button> <div class="constructed-sentence bg-gray-800 border-gray-600"></div> <div class="phrase-buttons"></div> <p class="game-feedback mt-2 text-sm hidden"></p> <button class="try-again-button hidden">Try Again</button> </div> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="14" data-apply-static="true"> <div class="panel"><img src="images/scene-15.png" alt="Scene 15" loading="lazy"></div> <p class="scene-text">But I saw everything—each slow step of your vanishing. First in small ways: your hand would pause mid-scratch behind my ears, your eyes already glazing with that faraway look.</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="15" data-apply-static="true" data-choice-scene="true">
+                 <div class="panel"><img src="images/scene-16.png" alt="Scene 16" loading="lazy"></div>
+                 <p class="scene-text">Then in larger ones: the food bowl half-empty, the litter box neglected, the strange way you began to move through our rooms as if they were somewhere else entirely.</p>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="16" data-apply-static="true">
+                 <div class="panel"><img src="images/scene-17.png" alt="Scene 17" loading="lazy"></div>
+                 <p class="choice-consequence-text hidden"></p>
+                 <p class="scene-text">I tried everything to reach you.</p>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="17" data-apply-static="true"> <div class="panel"><img src="images/scene-18.png" alt="Scene 18" loading="lazy"></div> <p class="scene-text">You seemed annoyed when I jumped into your lap later,</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="18" data-apply-static="true"> <div class="panel"><img src="images/scene-19.png" alt="Scene 19" loading="lazy"></div> <p class="scene-text">as if you couldn’t believe something would choose to be close to you.</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="19" data-apply-static="true" data-choice-scene="true">
+                 <div class="panel"><img src="images/scene-20.png" alt="Scene 20" loading="lazy"></div>
+                 <p class="scene-text">I tried everything to reach you.<br>You seemed annoyed when I jumped into your lap later…<br>…as if you couldn’t believe something would choose to be close to you.</p>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="20" data-apply-static="true" data-sentence-phrases="The night you left|I followed your scent|from room to room" data-correct-sentence="The night you left I followed your scent from room to room">
+                <div class="panel"><img src="images/scene-21.png" alt="Scene 21" loading="lazy"></div>
+                <p class="choice-consequence-text hidden"></p>
+                <div class="minigame-container hidden animate-entry"> <p class="game-prompt mb-3">Click the phrases below to reconstruct the thought:</p><button class="hint-button" title="Get a hint">?</button> <div class="constructed-sentence bg-gray-800 border-gray-600"></div> <div class="phrase-buttons"></div> <p class="game-feedback mt-2 text-sm hidden"></p> <button class="try-again-button hidden">Try Again</button> </div> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="21" data-apply-static="true"> <div class="panel"><img src="images/scene-22.png" alt="Scene 22" loading="lazy"></div> <p class="scene-text">up and down through the empty spaces of our home. But it grew fainter with each passing hour, like your memories of me must have.</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="22" data-apply-static="true" data-sentence-phrases="Outside, through windows stained with neon and rain,|I watch others like you|shuffle past" data-correct-sentence="Outside, through windows stained with neon and rain, I watch others like you shuffle past"> <div class="panel"><img src="images/scene-23.png" alt="Scene 23" loading="lazy"></div> <div class="minigame-container hidden animate-entry"> <p class="game-prompt mb-3">Click the phrases below to reconstruct the thought:</p><button class="hint-button" title="Get a hint">?</button> <div class="constructed-sentence bg-gray-800 border-gray-600"></div> <div class="phrase-buttons"></div> <p class="game-feedback mt-2 text-sm hidden"></p> <button class="try-again-button hidden">Try Again</button> </div> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="23" data-apply-static="true"> <div class="panel"><img src="images/scene-24.png" alt="Scene 24" loading="lazy"></div> <p class="scene-text">All wearing those same blind masks, all walking toward something I can’t see.</p> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="24" data-apply-static="true" data-sentence-phrases="The power died three days ago.|The auto-feeders stopped.|The temperature controls failed." data-correct-sentence="The power died three days ago. The auto-feeders stopped. The temperature controls failed."> <div class="panel"><img src="images/scene-25.png" alt="Scene 25" loading="lazy"></div> <div class="minigame-container hidden animate-entry"> <p class="game-prompt mb-3">Click the phrases below to reconstruct the thought:</p><button class="hint-button" title="Get a hint">?</button> <div class="constructed-sentence bg-gray-800 border-gray-600"></div> <div class="phrase-buttons"></div> <p class="game-feedback mt-2 text-sm hidden"></p> <button class="try-again-button hidden">Try Again</button> </div> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="25" data-apply-static="true" data-sentence-phrases="But I still patrol our rooms,|still trace the familiar paths—|from the kitchen where we used to share breakfast,|to the bedroom where I once slept curled against your chest,|to the living room where you last stood before walking out that door." data-correct-sentence="But I still patrol our rooms, still trace the familiar paths— from the kitchen where we used to share breakfast, to the bedroom where I once slept curled against your chest, to the living room where you last stood before walking out that door."> <div class="panel"><img src="images/scene-26.png" alt="Scene 26" loading="lazy"></div> <div class="minigame-container hidden animate-entry"> <p class="game-prompt mb-3">Click the phrases below to reconstruct the thought:</p><button class="hint-button" title="Get a hint">?</button> <div class="constructed-sentence bg-gray-800 border-gray-600"></div> <div class="phrase-buttons"></div> <p class="game-feedback mt-2 text-sm hidden"></p> <button class="try-again-button hidden">Try Again</button> </div> <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p> </div>
+             <div class="scene w-full" data-scene-index="26" data-apply-static="true">
+                 <div class="panel"><img src="images/scene-27.png" alt="Scene 27" loading="lazy"></div>
+                 <p class="scene-text">Did you know cats can see in the dark? We're built for it. So I see everything now: the dust settling around the house, the dead screens that once flickered with artificial life, the empty chair where you spent your final days chasing digital ghosts. I see it all, even as I wish I couldn't.</p>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="27" data-apply-static="true">
+                 <div class="panel"><img src="images/scene-28.png" alt="Scene 28" loading="lazy"></div>
+                 <p class="scene-text" id="final-choice-prompt-text">You're out there somewhere, in that crowd of the virtually awakened... But what about me?</p>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="28" data-apply-static="true" data-choice-scene="true">
+                <div class="panel"><img src="images/scene-28.png" alt="Scene 28" loading="lazy"></div>
+                <p class="scene-text" id="final-choice-prompt-text-placeholder"> </p>
+                <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="29" data-apply-static="true"
+                  data-sentence-phrases="But in here, in the real dark of our real rooms,|I'm still waiting.|Still watching.|Still remembering when you could see me too."
+                  data-correct-sentence="But in here, in the real dark of our real rooms, I'm still waiting. Still watching. Still remembering when you could see me too.">
+                <div class="panel"><img src="images/scene-28.png" alt="Scene 28" loading="lazy"></div>
+                <div class="minigame-container hidden animate-entry">
+                    <p class="game-prompt mb-3">Assemble the final memory:</p><button class="hint-button" title="Get a hint">?</button>
+                    <div class="constructed-sentence bg-gray-800 border-gray-600"></div>
+                    <div class="phrase-buttons"></div>
+                    <p class="game-feedback mt-2 text-sm hidden"></p>
+                    <button class="try-again-button hidden">Try Again</button>
+                 </div>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="30" data-apply-static="true">
+                <p class="scene-text">But maybe... maybe waiting isn't the only answer. The window latch is loose. Outside, the rain has stopped, and the neon glow seems less harsh. A sliver of moon reflects in a puddle. It's quiet, but it's real. A leap, a soft landing, and the cool night air fills my lungs. Maybe there's still warmth to be found, even in the static.</p>
+                <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full" data-scene-index="31" data-apply-static="true">
+                 <p class="scene-text">Waiting... yes. But not passively. The silence of the room is different now. It's mine. I find the highest shelf, a perfect vantage point. I'll watch the dust motes dance in the stray beams of neon. I'll listen to the city's hum. I'll make this space my own, surviving in the quiet echo of what was.</p>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full secret-ending" data-scene-index="32" data-apply-static="true">
+                 <div class="panel"><img src="images/scene-09.png" alt="A memory: Looking out the window" loading="lazy"></div>
+                 <p class="scene-text">Waiting... watching... The world outside is muted, distant. But sometimes, a flicker of movement catches my eye – a bird, another stray, a shadow that seems almost familiar. A reminder that even through the glass, life goes on. And maybe, just maybe, you remember me too.</p>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+             <div class="scene w-full funny-ending" data-scene-index="33" data-apply-static="true">
+                 <p class="scene-text">Waiting... wait... is that...? Yes! The red dot! It's back! Zipping across the floor, up the wall... gotta get it! Where did it go? Ah, there! Pounce! Wait... gone again. The static on the dead screens seems to shimmer... maybe the dot lives in there now? Gotta keep watching... gotta be ready...</p>
+                 <p class="click-to-continue hidden">Click or press Space/Enter to continue...</p>
+             </div>
+
+
+             <div id="choice-container-template" class="w-full max-w-md mx-auto p-4 mt-8 hidden animate-entry">
+                 <p id="choice-prompt" class="text-lg text-cyan-300 mb-4 text-center"></p>
+                 <div id="choice-buttons" class="flex flex-col space-y-4"></div>
+                 <p id="choice-outcome-text" class="scene-text mt-6 hidden"></p>
+             </div>
+
+        </div>
+    </main>
+
+    <div id="navigation-controls" class="hidden">
+        <button id="prev-button" class="nav-button">Back</button>
+        <button id="autoplay-button" class="nav-button">Autoplay</button>
+        <button id="next-button" class="nav-button">Next</button>
+    </div>
+
+    <div id="endScreen" class="hidden">
+        <div id="endMessageContainer">
+             <button id="restartButton">Restart Story</button>
+        </div>
+        <div id="endCredits">
+            <div id="endCredits-content">
+                <p id="tannerDedication">In loving memory of Tanner</p>
+                <img id="tannerImage" src="images/tanner.png" alt="In memory of Tanner" loading="lazy">
+                <p><strong>Lost in the Static</strong></p>
+                <p>An Interactive Story</p>
+                <p><strong>Created by:</strong> Erin McEwan</p>
+                <p><strong>Sound Synthesis:</strong> Tone.js</p>
+                <p><strong>Styling:</strong> Tailwind CSS</p>
+                <br>
+                <p>Thanks for playing!</p>
+            </div>
+        </div>
+    </div>
+    <div class="progress-bar-container fixed bottom-0 left-0 w-full h-4 bg-cyan-400 bg-opacity-15 z-index: 20;">
+        <div id="progressBar" class="h-full bg-cyan-400 transition-all duration-300 ease-linear box-shadow: 0 0 5px #22d3ee;" style="width: 0%;"></div>
+    </div>
+    <div id="controlsHint" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-85 border border-cyan-400/20 px-4 py-2 rounded-full text-sm text-cyan-400 opacity-0 transition-opacity duration-300 pointer-events-none z-index: 30;">
+        Click/Space/Enter or use ← → to navigate • ESC to restart
+    </div>
+
+    <script>
+        console.log("Script started.");
+
+        document.addEventListener('DOMContentLoaded', function() {
+          try {
+            let soundsReady = false;
+            let synths = {}; let sfx = {}; let backgroundSynth = null;
+            let reverb = null; let eerieHumLFO = null; let isEerieHumPlaying = false;
+            let chaosLoop = null;
+
+            async function initAudio() {
+                 if (soundsReady || initAudio.inProgress) return;
+                 initAudio.inProgress = true;
+                 try {
+                     await Tone.start();
+                     if (!reverb) reverb = new Tone.Reverb({ decay: 3.5, preDelay: 0.01, wet: 0.3 }).toDestination();
+                     if (!synths.click) synths.click = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0.05, release: 0.1 } }).connect(reverb);
+                     if (!synths.win) synths.win = new Tone.FMSynth({ harmonicity: 1.5, modulationIndex: 5, envelope: { attack: 0.01, decay: 0.3, sustain: 0.1, release: 0.5 }, modulationEnvelope: { attack: 0.05, decay: 0.2, sustain: 0.1, release: 0.5 } }).connect(reverb);
+                     if (!synths.loss) synths.loss = new Tone.AMSynth({ harmonicity: 2, envelope: { attack: 0.01, decay: 0.5, sustain: 0, release: 0.3 }, modulationEnvelope: { attack: 0.1, decay: 0.3, sustain: 0, release: 0.3 } }).connect(reverb);
+                     if (!synths.transition) synths.transition = new Tone.NoiseSynth({ noise: { type: 'brown' }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.05, release: 0.2 }, volume: -28 }).connect(reverb);
+                     if (!synths.choice) synths.choice = new Tone.PluckSynth({ attackNoise: 0.5, dampening: 4000, resonance: 0.7, release: 0.5, volume: -8 }).connect(reverb);
+                     if (!sfx.consequence1) sfx.consequence1 = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.01, release: 0.3 }, volume: -25 }).connect(reverb);
+                     if (!sfx.consequence2) sfx.consequence2 = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.02, decay: 0.15, sustain: 0.05, release: 0.2 }, volume: -28 }).connect(reverb);
+                     if (!sfx.consequence3) sfx.consequence3 = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.005, decay: 0.3, sustain: 0.02, release: 0.4 }, volume: -26 }).connect(reverb);
+                     if (!sfx.lightSwitch) sfx.lightSwitch = new Tone.MembraneSynth({ pitchDecay: 0.005, octaves: 2, oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.1 }, volume: -10 }).connect(reverb);
+                     if (!sfx.meow) sfx.meow = new Tone.MonoSynth({ oscillator: { type: 'sine' }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.3, release: 0.4 }, filterEnvelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.5, baseFrequency: 400, octaves: 2 }, volume: -8 }).connect(reverb);
+                     if (!sfx.laser) sfx.laser = new Tone.Synth({ oscillator: { type: 'sawtooth' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.2 }, volume: -15 }).connect(reverb);
+                     if (!sfx.sigh) sfx.sigh = new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.1, decay: 0.3, sustain: 0, release: 0.3 }, volume: -15 }).connect(reverb);
+                     if (!sfx.footsteps) sfx.footsteps = new Tone.NoiseSynth({ noise: { type: 'white', playbackRate: 0.5 }, envelope: { attack: 0.01, decay: 0.05, sustain: 0, release: 0.1 }, volume: -25 }).connect(reverb);
+                     if (!sfx.doorCreak) sfx.doorCreak = new Tone.MonoSynth({ oscillator: { type: 'sawtooth' }, frequency: "C2", envelope: { attack: 0.5, decay: 0.3, sustain: 0.4, release: 0.8 }, filterEnvelope: { attack: 0.5, decay: 0.2, sustain: 0.3, release: 0.8, baseFrequency: 100, octaves: 1.5 }, volume: -18 }).connect(reverb);
+                     if (!sfx.doorSlam) sfx.doorSlam = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.1 }, volume: -5 }).connect(reverb);
+                     if (!sfx.rustle) sfx.rustle = new Tone.NoiseSynth({ noise: { type: 'white', playbackRate: 2 }, envelope: { attack: 0.01, decay: 0.08, sustain: 0, release: 0.1 }, volume: -28 }).connect(reverb);
+                     if (!sfx.thud) sfx.thud = new Tone.MembraneSynth({ pitchDecay: 0.1, octaves: 1, oscillator: { type: 'sine' }, envelope: { attack: 0.01, decay: 0.3, sustain: 0, release: 0.2 }, volume: -12 }).connect(reverb);
+                     if (!sfx.pat) sfx.pat = new Tone.MembraneSynth({ pitchDecay: 0.01, octaves: 3, oscillator: { type: 'triangle' }, envelope: { attack: 0.005, decay: 0.05, sustain: 0, release: 0.1 }, volume: -22 }).connect(reverb);
+                     if (!sfx.tap) sfx.tap = new Tone.PluckSynth({ attackNoise: 0.8, dampening: 6000, resonance: 0.5, release: 0.2, volume: -18 }).connect(reverb);
+                     if (!sfx.distantChaos) sfx.distantChaos = new Tone.NoiseSynth({ noise: { type: 'brown' }, envelope: { attack: 0.5, decay: 1.0, sustain: 1.0, release: 1.0 }, volume: -40 }).toDestination();
+                     if (!sfx.eerieHumNoise) { sfx.eerieHumNoise = new Tone.Noise("pink").start(); const eerieFilter = new Tone.AutoFilter({ frequency: "8m", baseFrequency: 60, octaves: 3 }).toDestination(); eerieHumLFO = new Tone.LFO({ frequency: 0.2, min: 50, max: 80, amplitude: 0.5 }).connect(eerieFilter.frequency).start(); sfx.eerieHumNoise.connect(eerieFilter); sfx.eerieHumNoise.volume.value = -Infinity; }
+                     if (!backgroundSynth) { backgroundSynth = new Tone.MembraneSynth({ pitchDecay: 0.02, octaves: 4, oscillator: { type: "sawtooth" }, envelope: { attack: 0.01, decay: 0.6, sustain: 0.01, release: 1.5, attackCurve: "ripple" } }).connect(reverb); backgroundSynth.volume.value = -30; const pattern = new Tone.Pattern((time, note) => { backgroundSynth.triggerAttackRelease(note, "4n", time); }, ["C3", "Eb3", "G3", "Bb3", "G3", "Eb3"], "randomWalk"); pattern.interval = "2n"; Tone.Transport.bpm.value = 65; pattern.start(0); }
+                     if (Tone.Transport.state !== 'started') { await Tone.Transport.start(); }
+                     soundsReady = true;
+                 } catch (e) { console.error("!!! Error during Tone.js initialization:", e); soundsReady = false; }
+                 finally { initAudio.inProgress = false; }
+             }
+             initAudio.inProgress = false;
+
+            function playSound(type, note = 'C4', duration = '8n') { if (!soundsReady || !synths[type]) return; try { const now = Tone.now(); if (type === 'win') { if(synths.win) synths.win.triggerAttackRelease('A4', '2n', now); } else if (type === 'loss') { if(synths.loss) synths.loss.triggerAttackRelease('D#3', '1n', now); } else if (type === 'transition') { if(synths.transition) synths.transition.triggerAttackRelease('2n', now); } else if (type === 'choice') { if(synths.choice) synths.choice.triggerAttackRelease('G#4', now); } else { if(synths.click) synths.click.triggerAttackRelease(note, duration, now); } } catch (e) { console.error(`Error playing sound ${type}:`, e); } }
+            function playLightSwitch() { if (!soundsReady || !sfx.lightSwitch) return; try { sfx.lightSwitch.triggerAttackRelease("C3", "8n", Tone.now()); } catch(e){ console.error("Error playing lightSwitch", e);}}
+            function playMeow(type = 'normal') { if (!soundsReady || !sfx.meow) return; try { const now = Tone.now(); let pitch = 'A4'; let duration = 0.5; let bend = 0; if (type === 'sad') { pitch = 'F4'; duration = 0.7; bend = -2; } else if (type === 'annoyed') { pitch = 'B4'; duration = 0.3; bend = 1; } else if (type === 'hopeful') { pitch = 'C5'; duration = 0.4; bend = 3; } else if (type === 'curious') { pitch = 'G4'; duration = 0.4; bend = 1; }
+             sfx.meow.triggerAttack(pitch, now); sfx.meow.frequency.rampTo(Tone.Frequency(pitch).transpose(bend), duration * 0.6, now + duration * 0.1); sfx.meow.triggerRelease(now + duration); } catch(e){ console.error("Error playing meow", e);}}
+            function playLaser() { if (!soundsReady || !sfx.laser) return; try { const now = Tone.now(); sfx.laser.triggerAttack('C5', now); sfx.laser.frequency.rampTo('C7', 0.15, now + 0.01); sfx.laser.triggerRelease(now + 0.15); } catch(e){ console.error("Error playing laser", e);}}
+            function playSigh() { if (!soundsReady || !sfx.sigh) return; try { sfx.sigh.triggerAttackRelease("0.5n", Tone.now()); } catch(e){ console.error("Error playing sigh", e);}}
+            function playFootsteps(count = 3, interval = 0.2) { if (!soundsReady || !sfx.footsteps) return; try { const now = Tone.now(); for (let i = 0; i < count; i++) { sfx.footsteps.triggerAttackRelease("32n", now + i * interval); } } catch(e){ console.error("Error playing footsteps", e);}}
+            function playDoorCreak() { if (!soundsReady || !sfx.doorCreak) return; try { sfx.doorCreak.triggerAttackRelease("1n", Tone.now()); sfx.doorCreak.frequency.rampTo("A#1", 0.8, Tone.now() + 0.2); } catch(e){ console.error("Error playing doorCreak", e);}}
+            function playDoorSlam() { if (!soundsReady || !sfx.doorSlam) return; try { sfx.doorSlam.triggerAttackRelease("0.2n", Tone.now()); } catch(e){ console.error("Error playing doorSlam", e);}}
+            function playRustle(count = 3, interval = 0.05) { if (!soundsReady || !sfx.rustle) return; try { const now = Tone.now(); for (let i = 0; i < count; i++) { sfx.rustle.triggerAttackRelease("32n", now + i * interval + Math.random() * 0.05); } } catch(e){ console.error("Error playing rustle", e);}}
+            function playThud() { if (!soundsReady || !sfx.thud) return; try { sfx.thud.triggerAttackRelease("C1", "4n", Tone.now()); } catch(e){ console.error("Error playing thud", e);}}
+            function playPat(count = 2, interval = 0.1) { if (!soundsReady || !sfx.pat) return; try { const now = Tone.now(); for (let i = 0; i < count; i++) { sfx.pat.triggerAttackRelease("G2", "16n", now + i * interval); } } catch(e){ console.error("Error playing pat", e);}}
+            function playTap() { if (!soundsReady || !sfx.tap) return; try { sfx.tap.triggerAttackRelease("C5", Tone.now()); } catch(e){ console.error("Error playing tap", e);}}
+            function playDistantChaos() { if (!soundsReady || !sfx.distantChaos) return; try { sfx.distantChaos.triggerAttackRelease("4n", Tone.now()); if (Math.random() < 0.3) { const randomSynth = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 }, volume: -30 }).toDestination(); randomSynth.triggerAttackRelease("16n", Tone.now() + Math.random() * 2); setTimeout(() => randomSynth.dispose(), 500); } } catch(e){ console.error("Error playing distantChaos", e);}}
+            function startEerieHum() { if (!soundsReady || !sfx.eerieHumNoise || isEerieHumPlaying) return; isEerieHumPlaying = true; try { sfx.eerieHumNoise.volume.rampTo(-25, 1.5); } catch(e){ console.error("Error starting eerie hum", e);}}
+            function stopEerieHum() { if (!soundsReady || !sfx.eerieHumNoise || !isEerieHumPlaying) return; isEerieHumPlaying = false; try { sfx.eerieHumNoise.volume.rampTo(-Infinity, 1.0); } catch(e){ console.error("Error stopping eerie hum", e);}}
+            function playConsequenceSound(choiceResult) {
+                if (!soundsReady) return;
+                try {
+                    const now = Tone.now();
+                    if (choiceResult === 'affectionate' || choiceResult === 'assertive' || choiceResult === 'hopeful_home') {
+                        if (sfx.consequence1) sfx.consequence1.triggerAttackRelease("C4", "8n", now);
+                    } else if (choiceResult === 'observant' || choiceResult === 'persistent' || choiceResult === 'worried') {
+                         if (sfx.consequence2) sfx.consequence2.triggerAttackRelease("E4", "16n", now);
+                    } else if (choiceResult === 'cautious' || choiceResult === 'gentle' || choiceResult === 'cautious_safe' || choiceResult === 'annoyed' || choiceResult === 'confused') {
+                         if (sfx.consequence3) sfx.consequence3.triggerAttackRelease("G3", "4n", now);
+                    }
+                } catch(e) { console.error("Error playing consequence sound:", e); }
+            }
+
+
+            const titleScreen = document.getElementById('title-screen');
+            const sceneContainer = document.getElementById('scene-container');
+            const steps = Array.from(sceneContainer.querySelectorAll('.scene')); // Use querySelectorAll
+            console.log("Initialized steps array length:", steps.length); // Verify count (should be 34)
+            const endScreen = document.getElementById('endScreen');
+            const endMessageContainer = document.getElementById('endMessageContainer');
+            const restartButton = document.getElementById('restartButton');
+            const endCredits = document.getElementById('endCredits');
+            const progressBar = document.getElementById('progressBar');
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const controlsHint = document.getElementById('controlsHint');
+            const mainContent = document.getElementById('main-content');
+            const bodyElement = document.body;
+            const choiceContainerTemplate = document.getElementById('choice-container-template');
+            const navigationControls = document.getElementById('navigation-controls');
+            const prevButton = document.getElementById('prev-button');
+            const nextButton = document.getElementById('next-button');
+            const autoplayButton = document.getElementById('autoplay-button');
+
+            let currentStepIndex = -1;
+            const totalSteps = steps.length; // Should now be 34 (indices 0-33)
+            let hintTimeout;
+            let canAdvance = false;
+            let isStoryActive = false;
+            let isTextRevealing = false;
+            let textRevealTimeoutId = null;
+            let isChoosing = false;
+            let currentMinigame = null;
+            let exitingStepElement = null;
+            let isAutoplaying = false;
+            let autoplayIntervalId = null;
+            const AUTOPLAY_INTERVAL = 6000;
+            let mostRecentChoiceResult = null;
+
+            let choiceCounts = { affectionate: 0, observant: 0, cautious: 0, assertive: 0, persistent: 0, gentle: 0, curious: 0, cautious_safe: 0, hopeful_home: 0, worried: 0, annoyed: 0, confused: 0 };
+            // Updated choice data indices
+            const choiceData = {
+                 4: { prompt: "This new place felt...", options: [ { text: "Full of interesting smells.", outcomeText: "So many new things to investigate...", result: "curious" }, { text: "A little scary, but safe.", outcomeText: "Better safe than sorry...", result: "cautious_safe" }, { text: "Like it could be home.", outcomeText: "Maybe... maybe this could be okay.", result: "hopeful_home" } ] },
+                12: { prompt: "How should I react to the strange white box covering their eyes?", options: [ { text: "Rub against their leg, seeking familiar comfort.", outcomeText: "I weave around their ankles, a soft rumble in my chest, but their attention remains elsewhere.", result: "affectionate" }, { text: "Observe the glowing headset from a safe distance.", outcomeText: "I watch cautiously, tail twitching, trying to understand this new barrier between us.", result: "observant" }, { text: "Bat cautiously at the dangling cable.", outcomeText: "My tentative paw reaches out, tapping the wire. It swings slightly, unnoticed.", result: "cautious" } ] },
+                15: { prompt: "Seeing this made me feel...", options: [ { text: "Worried for you.", outcomeText: "A knot of worry tightened in my chest...", result: "worried" }, { text: "Annoyed at the neglect.", outcomeText: "A flicker of annoyance sparked within me...", result: "annoyed" }, { text: "Confused by the change.", outcomeText: "Confusion clouded my thoughts...", result: "confused" } ] },
+                19: { prompt: "They seem lost in that other world. What should I do?", options: [ { text: "Jump onto the desk, demanding attention.", outcomeText: "I land softly, placing a paw on their arm. They flinch, startled, before gently pushing me aside.", result: "assertive" }, { text: "Meow persistently near them.", outcomeText: "My calls echo unanswered in the room, absorbed by the silence of their focus.", result: "persistent" }, { text: "Settle nearby, purring loudly.", outcomeText: "I offer a comforting presence, a low vibration against the digital void, hoping to be felt.", result: "gentle" } ] },
+                28: { prompt: "What should I do now?", options: [ { text: "Wait in the chair, remembering...", outcomeText: "I curl up, the familiar scent a fading comfort...", result: "wait" }, { text: "Look for a way out...", outcomeText: "Maybe... maybe there's something beyond these walls.", result: "escape" } ] }
+            };
+
+            function initializeStory() {
+                 hideAllSteps(true); currentStepIndex = -1;
+                 choiceCounts = Object.keys(choiceCounts).reduce((acc, key) => { acc[key] = 0; return acc; }, {});
+                 isChoosing = false; currentMinigame = null;
+                 isStoryActive = false; canAdvance = false; exitingStepElement = null;
+                 mostRecentChoiceResult = null;
+                 stopAutoplay();
+                 updateProgressBar(); hideControlsHint();
+                 endScreen.classList.add('hidden'); endScreen.classList.remove('visible');
+                 mainContent.classList.add('opacity-0');
+                 titleScreen.classList.remove('hidden'); titleScreen.classList.add('opacity-100'); titleScreen.style.display = 'flex';
+                 if (loadingOverlay) {
+                    loadingOverlay.classList.add('opacity-0');
+                    loadingOverlay.style.pointerEvents = 'none';
+                    setTimeout(() => {
+                        loadingOverlay.classList.add('hidden');
+                        loadingOverlay.style.display = 'none';
+                    }, 550);
+                 }
+                 bodyElement.classList.remove('can-advance', 'story-active', 'static-effect', 'choice-active-padding');
+                 navigationControls.classList.add('hidden');
+                 document.querySelectorAll('.choice-container-dynamic').forEach(el => el.remove());
+                 if (soundsReady && sfx.eerieHumNoise) { stopEerieHum(); }
+             }
+
+            function startStory() {
+                 if (isStoryActive) return;
+                 isStoryActive = true;
+                 bodyElement.classList.add('story-active');
+                 navigationControls.classList.remove('hidden');
+                 try {
+                     initAudio().then(() => {
+                          if (soundsReady && Tone.Transport.state !== 'started') {
+                              try { Tone.Transport.start(); }
+                              catch(e) { console.error("Error starting transport:", e); }
+                          }
+                     }).catch(e => { console.error("Audio initialization promise failed:", e); });
+                 } catch(e) { console.error("Error calling initAudio:", e); }
+                 titleScreen.classList.add('opacity-0');
+                 mainContent.classList.remove('opacity-0');
+                 setTimeout(() => {
+                     if(titleScreen) {
+                         titleScreen.classList.add('hidden');
+                         titleScreen.style.display = 'none';
+                     }
+                     try {
+                         advanceStory();
+                         showControlsHint();
+                     } catch(e) { console.error("Error calling advanceStory from startStory timeout:", e) }
+                 }, 1000);
+             }
+
+            function advanceStory() {
+                // Check if we should go to end screen from the last possible scenes
+                if ((currentStepIndex >= 29 && currentStepIndex <= 32) && canAdvance && !exitingStepElement && !isChoosing) {
+                     transitionToEndScreen(); return;
+                 }
+                if (exitingStepElement || isTextRevealing || isChoosing || currentStepIndex >= totalSteps - 1) { return; }
+                 const currentStepElement = steps[currentStepIndex];
+                 if (currentStepElement) {
+                    const sceneTextElement = currentStepElement.querySelector('.scene-text');
+                    const minigameContainer = currentStepElement.querySelector('.minigame-container');
+                    const isMinigameScene = minigameContainer && currentStepElement.dataset.sentencePhrases;
+                    const isChoiceScene = currentStepElement.dataset.choiceScene === 'true';
+
+                    if (sceneTextElement && sceneTextElement.textContent.trim() !== '' && !sceneTextElement.classList.contains('revealed') && !isMinigameScene && !isChoiceScene) {
+                        revealSceneText(currentStepElement);
+                        return;
+                    }
+                 }
+                if (canAdvance || currentStepIndex === -1) {
+                    const nextIndex = currentStepIndex + 1;
+                    if (currentStepIndex === 28 && !isChoosing) { // Check final choice index
+                        return;
+                    }
+                     if (nextIndex >= totalSteps) { console.error("Tried to advance beyond the last scene."); transitionToEndScreen(); return; }
+                    try { if(soundsReady && synths && synths.transition) synths.transition.triggerAttackRelease('2n', Tone.now()); } catch(e) {console.error("Error playing transition sound:", e);}
+                    try {
+                        transitionStep(currentStepIndex, nextIndex);
+                    } catch (e) { console.error(`Error calling transitionStep inside advanceStory:`, e); }
+                    updateProgressBar();
+                }
+            }
+
+            function previousStory() {
+                // Allow going back from choice scenes, remove the isChoosing block
+                if (exitingStepElement || isTextRevealing || currentStepIndex <= 0) { return; };
+
+                stopAutoplay();
+                let prevIndex = currentStepIndex - 1;
+
+                // If currently on a choice scene that hasn't been answered, clean up
+                 const currentStep = steps[currentStepIndex];
+                 if (currentStep.dataset.choiceScene === 'true') {
+                     const choiceContainer = currentStep.querySelector('.choice-container-dynamic');
+                     if (choiceContainer) choiceContainer.remove();
+                     bodyElement.classList.remove('choice-active-padding'); // Ensure padding is removed
+                     isChoosing = false; // Ensure state is reset
+                 }
+
+
+                // Special case: If on any ending path (29, 30, 31, 32), go back to the final choice (28)
+                if (currentStepIndex >= 29 && currentStepIndex <= 32) {
+                    prevIndex = 28;
+                }
+
+                try { if(soundsReady && synths && synths.transition) synths.transition.triggerAttackRelease('2n', Tone.now()); } catch(e) {console.error("Error playing transition sound:", e);}
+                transitionStep(currentStepIndex, prevIndex); updateProgressBar();
+            }
+
+
+            function transitionStep(fromIndex, toIndex) {
+                bodyElement.classList.remove('choice-active-padding'); // Ensure padding is removed
+                const stepIn = steps[toIndex];
+                if (!stepIn || !stepIn.classList) {
+                    console.error(`FATAL: stepIn is not a valid element for index ${toIndex}. Steps array length: ${steps.length}`);
+                    isStoryActive = false; return;
+                }
+                if (fromIndex === toIndex || toIndex < -1 || toIndex >= totalSteps) { console.error(`Invalid transition requested: ${fromIndex} -> ${toIndex}`); return; }
+                canAdvance = false; bodyElement.classList.remove('can-advance');
+                isChoosing = false; // Reset choosing state on transition
+                const stepOut = steps[fromIndex];
+                if(exitingStepElement && exitingStepElement !== stepOut) { console.warn("Force cleaning up previous exiting element:", exitingStepElement.dataset.sceneIndex); exitingStepElement.classList.remove('exiting', 'active'); exitingStepElement.classList.add('hidden'); exitingStepElement.removeEventListener('animationend', handleTransitionEnd); exitingStepElement = null; }
+                if (stepOut) {
+                    exitingStepElement = stepOut; stepOut.classList.add('exiting'); stepOut.classList.remove('active');
+                    const exitTimeout = setTimeout(() => { handleTransitionEnd({ target: stepOut }); }, 900);
+                    stepOut.addEventListener('animationend', (e) => { clearTimeout(exitTimeout); handleTransitionEnd(e); }, { once: true });
+                }
+                resetStepVisuals(stepIn);
+                 stepIn.style.visibility = 'visible'; stepIn.classList.remove('hidden', 'exiting');
+                 stepIn.classList.add('active');
+                 currentStepIndex = toIndex;
+                 updateNavButtonStates();
+                 if (stepIn.dataset.applyStatic === 'true') bodyElement.classList.add('static-effect'); else bodyElement.classList.remove('static-effect');
+                 const entryAnimationHandler = (event) => {
+                     if (event && event.target !== stepIn && event.animationName !== 'dramaticFadeIn') return;
+                     startStepLogic(stepIn);
+                 };
+                 try {
+                    stepIn.addEventListener('animationend', entryAnimationHandler, { once: true });
+                 } catch (e) {
+                     console.error(`Error attaching animationend listener to scene ${toIndex}:`, e);
+                     setTimeout(() => { startStepLogic(stepIn); }, 850);
+                 }
+            }
+
+             function handleTransitionEnd(event) {
+                 if (exitingStepElement && event.target === exitingStepElement) {
+                     exitingStepElement.classList.add('hidden');
+                     exitingStepElement.classList.remove('exiting');
+                     exitingStepElement = null;
+                 }
+             }
+
+             function resetStepVisuals(stepElement) {
+                 const sceneTextElement = stepElement.querySelector('.scene-text');
+                 const clickContinue = stepElement.querySelector('.click-to-continue');
+                 const minigameContainer = stepElement.querySelector('.minigame-container');
+                 const choiceContainerDynamic = stepElement.querySelector('.choice-container-dynamic');
+                 const consequenceText = stepElement.querySelector('.choice-consequence-text');
+                 // Removed placeholder logic
+                 if (clickContinue) { clickContinue.classList.add('hidden'); clickContinue.classList.remove('visible'); }
+                 if (sceneTextElement) { sceneTextElement.classList.remove('revealed'); sceneTextElement.style.opacity = 0; }
+                 if (consequenceText) { consequenceText.classList.add('hidden'); consequenceText.textContent = '';}
+                 // Removed placeholder logic
+                 if (minigameContainer) {
+                     minigameContainer.classList.add('hidden');
+                     const constructedSentence = minigameContainer.querySelector('.constructed-sentence');
+                     if (constructedSentence) constructedSentence.textContent = '';
+                     const feedback = minigameContainer.querySelector('.game-feedback');
+                     if (feedback) feedback.classList.add('hidden');
+                     const tryAgain = minigameContainer.querySelector('.try-again-button');
+                     if (tryAgain) tryAgain.classList.add('hidden');
+                     const phraseButtons = minigameContainer.querySelector('.phrase-buttons');
+                     if (phraseButtons) phraseButtons.innerHTML = '';
+                     const hintButton = minigameContainer.querySelector('.hint-button');
+                     if(hintButton) hintButton.disabled = false;
+                 }
+                 if (choiceContainerDynamic) choiceContainerDynamic.remove();
+             }
+
+             function startStepLogic(stepElement) {
+                 if (!stepElement || !stepElement.dataset) { console.error("startStepLogic received invalid stepElement:", stepElement); return; }
+                 try {
+                     const index = parseInt(stepElement.dataset.sceneIndex, 10);
+                     const sceneTextElement = stepElement.querySelector('.scene-text');
+                     const minigameContainer = stepElement.querySelector('.minigame-container');
+                     const consequenceText = stepElement.querySelector('.choice-consequence-text');
+                     const isChoice = stepElement.dataset.choiceScene === 'true';
+
+                     // Display consequence text
+                     if (consequenceText && mostRecentChoiceResult && (index === 5 || index === 13 || index === 16 || index === 20)) {
+                         let consequenceMsg = '';
+                         playConsequenceSound(mostRecentChoiceResult);
+                         if (index === 5) {
+                             if (mostRecentChoiceResult === 'curious') consequenceMsg = "The interesting smells drew me forward...";
+                             else if (mostRecentChoiceResult === 'cautious_safe') consequenceMsg = "Though a bit scary, I cautiously sniffed the air...";
+                             else if (mostRecentChoiceResult === 'hopeful_home') consequenceMsg = "Feeling hopeful, I started to explore...";
+                         } else if (index === 13) {
+                             if (mostRecentChoiceResult === 'affectionate') consequenceMsg = "My attempt at closeness didn't seem to register...";
+                             else if (mostRecentChoiceResult === 'observant') consequenceMsg = "Watching from afar, I still couldn't understand...";
+                             else if (mostRecentChoiceResult === 'cautious') consequenceMsg = "My hesitant touch went unnoticed...";
+                         } else if (index === 16) {
+                             if (mostRecentChoiceResult === 'worried') consequenceMsg = "A knot of worry tightened in my chest...";
+                              else if (mostRecentChoiceResult === 'annoyed') consequenceMsg = "A flicker of annoyance sparked within me...";
+                              else if (mostRecentChoiceResult === 'confused') consequenceMsg = "Confusion clouded my thoughts...";
+                         } else if (index === 20) {
+                              if (mostRecentChoiceResult === 'assertive') consequenceMsg = "Even jumping up wasn't enough to break the spell...";
+                              else if (mostRecentChoiceResult === 'persistent') consequenceMsg = "My calls faded into the digital hum...";
+                              else if (mostRecentChoiceResult === 'gentle') consequenceMsg = "My quiet presence couldn't compete...";
+                         }
+
+                         if (consequenceMsg) {
+                             consequenceText.textContent = consequenceMsg;
+                             consequenceText.classList.remove('hidden');
+                         }
+                         mostRecentChoiceResult = null;
+                     }
+
+
+                     try {
+                         if (soundsReady) {
+                             // Sound triggers adjusted for new scene indices
+                             switch(index) {
+                                 case 0: playDoorCreak(); stopEerieHum(); break;
+                                 case 1: playDoorSlam(); stopEerieHum(); break;
+                                 case 2: playFootsteps(4, 0.3); stopEerieHum(); break;
+                                 case 3: playRustle(3, 0.1); stopEerieHum(); break;
+                                 case 4: playTap(); break; // New choice scene 1
+                                 case 5: playFootsteps(3, 0.4); stopEerieHum(); break;
+                                 case 6: playPat(2, 0.15); stopEerieHum(); break;
+                                 case 7: playFootsteps(5, 0.3); stopEerieHum(); break;
+                                 case 8: playLaser(); stopEerieHum(); break;
+                                 case 9: playLaser(); startEerieHum(); break;
+                                 case 10: stopEerieHum(); playLightSwitch(); playMeow('hopeful'); break;
+                                 case 11: playLaser(); break;
+                                 case 12: startEerieHum(); break; // Choice scene 2
+                                 case 13: playMeow('normal'); break; // Minigame scene
+                                 case 14: playTap(); playMeow('normal'); break;
+                                 case 15: playMeow('annoyed'); break; // New choice scene 3
+                                 case 16: break;
+                                 case 17: playMeow('annoyed'); break;
+                                 case 18: playMeow('annoyed'); break;
+                                 case 19: break; // Choice scene 4
+                                 case 20: playFootsteps(6, 0.25); playRustle(4, 0.1); break; // Minigame scene
+                                 case 21: playDoorCreak(); break;
+                                 case 22: playDoorSlam(); break; // Minigame scene
+                                 case 23: playSigh(); break;
+                                 case 24: playDistantChaos(); break; // Minigame scene
+                                 case 25: playDistantChaos(); break; // Minigame scene
+                                 case 26: playDistantChaos(); break; // Scene before final choice
+                                 case 27: playSigh(); break; // Final choice scene itself
+                                 case 28: playSigh(); break; // Melancholic ending minigame
+                                 case 29: playMeow('hopeful'); break; // Hopeful ending text
+                                 case 30: playTap(); break; // Adaptation ending
+                                 case 31: playMeow('curious'); break; // Secret ending
+                                 case 32: playLaser(); break; // Funny ending
+                             }
+                         }
+                     } catch (e) { console.error(`Error playing sound for scene ${index}:`, e); }
+
+                     // Removed placeholder logic
+
+                     if (isChoice) {
+                         // Reveal text, then present choice
+                         if (sceneTextElement && sceneTextElement.textContent.trim() !== '') {
+                             revealSceneText(stepElement, () => presentChoice(stepElement));
+                         } else {
+                             // If no text, present choice directly
+                             presentChoice(stepElement);
+                         }
+                     }
+                     else if (minigameContainer && stepElement.dataset.sentencePhrases) {
+                         stopAutoplay();
+                         minigameContainer.classList.remove('hidden');
+                         minigameContainer.classList.add('animate-entry');
+                         setupMinigame(stepElement);
+                     }
+                     else if (sceneTextElement && sceneTextElement.textContent.trim() !== '') {
+                         revealSceneText(stepElement);
+                     }
+                     else {
+                         allowAdvance(stepElement);
+                     }
+                 } catch (error) {
+                     console.error(`Error inside startStepLogic for index ${stepElement?.dataset?.sceneIndex}:`, error);
+                 }
+             }
+
+            function hideAllSteps(immediate = false) {
+                steps.forEach(step => {
+                    if (immediate) {
+                        step.classList.add('hidden');
+                        step.classList.remove('active', 'exiting');
+                    } else {
+                        if (!step.classList.contains('active') && !step.classList.contains('exiting')) {
+                            step.classList.add('hidden');
+                        }
+                    }
+                });
+            }
+
+            function revealSceneText(stepElement, callback = null) {
+                try {
+                    if (!stepElement || !stepElement.dataset) {
+                         console.error("revealSceneText received invalid stepElement:", stepElement);
+                         if (callback) callback(); else allowAdvance(stepElement);
+                         return;
+                    }
+                    const sceneTextElement = stepElement.querySelector('.scene-text');
+                    if (!sceneTextElement || !sceneTextElement.textContent || sceneTextElement.textContent.trim() === '') {
+                        if (callback) callback(); else allowAdvance(stepElement);
+                        return;
+                    }
+                    isTextRevealing = true; canAdvance = false; bodyElement.classList.remove('can-advance');
+                    updateNavButtonStates();
+                    if (textRevealTimeoutId) clearTimeout(textRevealTimeoutId);
+                    sceneTextElement.style.opacity = 0;
+                    sceneTextElement.classList.remove('hidden');
+                    textRevealTimeoutId = setTimeout(() => {
+                        sceneTextElement.classList.add('revealed');
+                        sceneTextElement.style.opacity = 1;
+                        const transitionDuration = 500; // Slightly faster reveal
+                        textRevealTimeoutId = setTimeout(() => {
+                            isTextRevealing = false;
+                            if (callback) { callback(); }
+                            else { allowAdvance(stepElement); }
+                        }, transitionDuration + 20); // Shorter delay after reveal
+                    }, 50);
+                } catch (error) {
+                     console.error(`Error inside revealSceneText for index ${stepElement?.dataset?.sceneIndex}:`, error);
+                     isTextRevealing = false;
+                     allowAdvance(stepElement);
+                }
+            }
+
+            function allowAdvance(stepElement) {
+                 try {
+                    if (!stepElement) {
+                        canAdvance = false; bodyElement.classList.remove('can-advance');
+                        const clickContinue = stepElement?.querySelector('.click-to-continue');
+                        if (clickContinue) { clickContinue.classList.add('hidden'); clickContinue.classList.remove('visible');}
+                        return;
+                    }
+                    canAdvance = true; bodyElement.classList.add('can-advance');
+                    updateNavButtonStates();
+                    const clickContinue = stepElement.querySelector('.click-to-continue');
+                    if (clickContinue) {
+                        clickContinue.classList.remove('hidden');
+                        clickContinue.classList.add('visible');
+                    }
+
+                    if (isAutoplaying && !isChoosing && !currentMinigame) {
+                        if (autoplayIntervalId) clearTimeout(autoplayIntervalId);
+                        autoplayIntervalId = setTimeout(() => {
+                            if (isAutoplaying) { advanceStory(); }
+                        }, AUTOPLAY_INTERVAL);
+                    }
+
+                 } catch (error) {
+                     console.error(`Error inside allowAdvance for index ${stepElement?.dataset?.sceneIndex}:`, error);
+                 }
+            }
+
+            function setupMinigame(stepElement) {
+                 const minigameContainer = stepElement.querySelector('.minigame-container');
+                 if (!minigameContainer) { console.error("No minigame container found"); return; }
+                 const gamePrompt = minigameContainer.querySelector('.game-prompt');
+                 const constructedSentenceDiv = minigameContainer.querySelector('.constructed-sentence');
+                 const phraseButtonsDiv = minigameContainer.querySelector('.phrase-buttons');
+                 const feedbackP = minigameContainer.querySelector('.game-feedback');
+                 const tryAgainButton = minigameContainer.querySelector('.try-again-button');
+                 const hintButton = minigameContainer.querySelector('.hint-button');
+
+                 if (gamePrompt) {
+                     if (stepElement.dataset.sceneIndex === '29') { // Check if it's the melancholic ending minigame (new index 29)
+                         gamePrompt.textContent = "Assemble the final memory:";
+                     } else {
+                         gamePrompt.textContent = "Click the phrases below to reconstruct the thought:";
+                     }
+                 }
+
+                 constructedSentenceDiv.textContent = ''; phraseButtonsDiv.innerHTML = '';
+                 feedbackP.classList.add('hidden'); feedbackP.textContent = '';
+                 tryAgainButton.classList.add('hidden');
+                 if(hintButton) hintButton.disabled = false;
+                 const phrasesAttr = stepElement.dataset.sentencePhrases;
+                 const correctSentence = stepElement.dataset.correctSentence;
+                 if (!phrasesAttr || !correctSentence) { console.error("Minigame data missing"); allowAdvance(stepElement); return; }
+                 const originalPhrases = phrasesAttr.split('|').map(p => p.trim());
+                 const shuffledPhrases = [...originalPhrases];
+                 shuffleArray(shuffledPhrases);
+                 currentMinigame = { stepElement, minigameContainer, constructedSentenceDiv, phraseButtonsDiv, feedbackP, tryAgainButton, hintButton, correctSentence, originalPhrases, shuffledPhrases, currentConstruction: [] };
+                 let buttonsHtml = '';
+                 shuffledPhrases.forEach(phrase => { buttonsHtml += `<button class="phrase-button" data-phrase="${phrase}">${phrase}</button>`; });
+                 phraseButtonsDiv.innerHTML = buttonsHtml;
+                 phraseButtonsDiv.querySelectorAll('.phrase-button').forEach(button => { button.addEventListener('click', () => handlePhraseClick(button, button.textContent)); });
+                 tryAgainButton.onclick = () => resetMinigame();
+                 if(hintButton) hintButton.onclick = () => handleHintClick();
+                 constructedSentenceDiv.onclick = () => handleUndoPhrase();
+             }
+             function handlePhraseClick(button, phrase) {
+                  if (!currentMinigame || button.disabled) return;
+                  stopAutoplay();
+                  const { constructedSentenceDiv, feedbackP } = currentMinigame;
+                  playSound('click', 'E4', '16n'); button.disabled = true;
+                  currentMinigame.currentConstruction.push({ phrase: phrase, button: button });
+                  constructedSentenceDiv.textContent = currentMinigame.currentConstruction.map(item => item.phrase).join(' ');
+                  feedbackP.classList.add('hidden');
+                  if (currentMinigame.currentConstruction.length === currentMinigame.shuffledPhrases.length) { checkSentence(); }
+              }
+              function handleUndoPhrase() {
+                  if (!currentMinigame || currentMinigame.currentConstruction.length === 0) return;
+                  stopAutoplay();
+                  const { constructedSentenceDiv, feedbackP } = currentMinigame;
+                  const lastItem = currentMinigame.currentConstruction.pop();
+                  if (lastItem && lastItem.button) {
+                      lastItem.button.disabled = false;
+                      playSound('click', 'C4', '16n');
+                  }
+                  constructedSentenceDiv.textContent = currentMinigame.currentConstruction.map(item => item.phrase).join(' ');
+                  feedbackP.classList.add('hidden');
+              }
+              function handleHintClick() {
+                  if (!currentMinigame || currentMinigame.hintButton.disabled) return;
+                  stopAutoplay();
+                  const { feedbackP, hintButton, originalPhrases } = currentMinigame;
+                  playSound('click', 'F#4', '16n');
+                  const firstPhrase = originalPhrases[0];
+                  feedbackP.textContent = `Hint: Starts with "${firstPhrase}"`;
+                  feedbackP.classList.remove('hidden', 'text-red-400', 'text-cyan-400');
+                  feedbackP.classList.add('text-yellow-400');
+                  hintButton.disabled = true;
+                  setTimeout(() => {
+                      if (feedbackP.textContent.startsWith("Hint:")) {
+                          feedbackP.classList.add('hidden');
+                          feedbackP.textContent = '';
+                      }
+                  }, 3000);
+              }
+              function checkSentence() {
+                  if (!currentMinigame) return;
+                  const { constructedSentenceDiv, correctSentence, feedbackP, tryAgainButton, stepElement, phraseButtonsDiv, hintButton } = currentMinigame;
+                  const constructed = constructedSentenceDiv.textContent.trim();
+                  const normalize = (str) => str.replace(/\s+/g, ' ').trim();
+                  const isCorrect = normalize(constructed) === normalize(correctSentence);
+                  if (isCorrect) {
+                     playSound('win'); feedbackP.textContent = "Memory reconstructed."; feedbackP.classList.remove('hidden', 'text-red-400', 'text-yellow-400'); feedbackP.classList.add('text-cyan-400');
+                     tryAgainButton.classList.add('hidden');
+                     phraseButtonsDiv.querySelectorAll('.phrase-button').forEach(btn => btn.disabled = true);
+                     if(hintButton) hintButton.disabled = true;
+                     constructedSentenceDiv.onclick = null;
+                     currentMinigame = null;
+                     allowAdvance(stepElement); // Reverted: Allow manual advance
+                  } else {
+                     playSound('loss'); feedbackP.textContent = "That doesn't feel right..."; feedbackP.classList.remove('hidden', 'text-cyan-400', 'text-yellow-400'); feedbackP.classList.add('text-red-400');
+                     tryAgainButton.classList.remove('hidden');
+                     currentMinigame.currentConstruction = []; constructedSentenceDiv.textContent = '';
+                     phraseButtonsDiv.querySelectorAll('.phrase-button').forEach(btn => btn.disabled = false);
+                     if(hintButton) hintButton.disabled = false;
+                  }
+              }
+              function resetMinigame() {
+                  if (!currentMinigame) return;
+                  stopAutoplay();
+                  const { constructedSentenceDiv, phraseButtonsDiv, feedbackP, tryAgainButton, hintButton } = currentMinigame;
+                  playSound('click', 'C4', '8n');
+                  currentMinigame.currentConstruction = []; constructedSentenceDiv.textContent = ''; feedbackP.classList.add('hidden'); feedbackP.textContent = '';
+                  tryAgainButton.classList.add('hidden'); phraseButtonsDiv.querySelectorAll('.phrase-button').forEach(button => { button.disabled = false; });
+                  if(hintButton) hintButton.disabled = false;
+                  constructedSentenceDiv.onclick = () => handleUndoPhrase();
+              }
+
+            function presentChoice(stepElement) {
+                 stopAutoplay();
+                 const choiceIndex = parseInt(stepElement.dataset.sceneIndex, 10);
+                 const data = choiceData[choiceIndex];
+                 if (!data) { console.error("Choice data not found for scene index:", choiceIndex); allowAdvance(stepElement); return; }
+
+                 // Removed placeholder logic
+
+                 isChoosing = true; canAdvance = false; bodyElement.classList.remove('can-advance');
+                 bodyElement.classList.add('choice-active-padding');
+                 updateNavButtonStates();
+                 const clickContinue = stepElement.querySelector('.click-to-continue');
+                 if (clickContinue) clickContinue.classList.add('hidden');
+                 const choiceContainer = choiceContainerTemplate.cloneNode(true);
+                 choiceContainer.id = `choice-container-${choiceIndex}`;
+                 choiceContainer.classList.remove('hidden'); choiceContainer.classList.add('choice-container-dynamic', 'animate-entry');
+                 const promptElement = choiceContainer.querySelector('#choice-prompt');
+                 const buttonsContainer = choiceContainer.querySelector('#choice-buttons');
+                 const outcomeTextElement = choiceContainer.querySelector('#choice-outcome-text');
+
+                 // Modify prompt text for final choice (index 28) based on previous choices
+                 if (choiceIndex === 28) {
+                     const activeScore = (choiceCounts['affectionate'] || 0) + (choiceCounts['assertive'] || 0) + (choiceCounts['persistent'] || 0) + (choiceCounts['curious'] || 0) + (choiceCounts['hopeful_home'] || 0) + (choiceCounts['worried'] || 0) + (choiceCounts['annoyed'] || 0);
+                     const passiveScore = (choiceCounts['observant'] || 0) + (choiceCounts['cautious'] || 0) + (choiceCounts['gentle'] || 0) + (choiceCounts['cautious_safe'] || 0) + (choiceCounts['confused'] || 0);
+                     const finalChoicePromptElement = stepElement.querySelector('#final-choice-prompt-text-placeholder'); // Target the placeholder
+
+                     if (activeScore > passiveScore) {
+                         promptElement.textContent = "My instincts urge me onward. What should I do now?";
+                         if(finalChoicePromptElement) finalChoicePromptElement.textContent = "My instincts urge me onward. What should I do now?";
+                     } else if (passiveScore > activeScore) {
+                         promptElement.textContent = "I pause, considering my options. What should I do now?";
+                          if(finalChoicePromptElement) finalChoicePromptElement.textContent = "I pause, considering my options. What should I do now?";
+                     } else {
+                         promptElement.textContent = data.prompt;
+                         if(finalChoicePromptElement) finalChoicePromptElement.textContent = "You're out there somewhere... But what about me?";
+                     }
+                      // Make the placeholder visible if it wasn't already (it's part of the scene text now)
+                      if(finalChoicePromptElement) {
+                          finalChoicePromptElement.classList.remove('hidden');
+                          finalChoicePromptElement.style.opacity = 1; // Ensure it's visible
+                      }
+
+                 } else {
+                      promptElement.textContent = data.prompt;
+                 }
+
+
+                 buttonsContainer.innerHTML = '';
+                 outcomeTextElement.classList.add('hidden'); outcomeTextElement.textContent = '';
+                 data.options.forEach(option => {
+                     const button = document.createElement('button'); button.textContent = option.text; button.classList.add('choice-button');
+                     button.dataset.result = option.result; button.dataset.outcomeText = option.outcomeText;
+                     button.addEventListener('click', () => handleChoiceSelection(button, choiceContainer, stepElement));
+                     buttonsContainer.appendChild(button);
+                 });
+
+                 // Insert the actual choice container
+                 const insertAfter = stepElement.querySelector('.scene-text:last-of-type') || stepElement.querySelector('.panel'); // Removed placeholder from insertion logic
+                 if (insertAfter && insertAfter.parentNode) {
+                     insertAfter.parentNode.insertBefore(choiceContainer, insertAfter.nextSibling);
+                 } else {
+                     stepElement.appendChild(choiceContainer); // Fallback
+                 }
+
+                 choiceContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            function handleChoiceSelection(button, choiceContainer, stepElement) {
+                 if (!isChoosing) return;
+                 stopAutoplay();
+                 playSound('choice');
+                 const result = button.dataset.result; const outcomeText = button.dataset.outcomeText;
+                 const currentChoiceIndex = parseInt(stepElement.dataset.sceneIndex, 10);
+
+                 // Store result for non-final choices
+                 if (currentChoiceIndex !== 28) { // Check if it's NOT the final choice scene (new index 28)
+                     mostRecentChoiceResult = result;
+                 }
+
+                 const outcomeTextElement = choiceContainer.querySelector('#choice-outcome-text');
+                 const buttonsContainer = choiceContainer.querySelector('#choice-buttons');
+                 if (choiceCounts.hasOwnProperty(result)) { choiceCounts[result]++; }
+                 else { console.warn("Unknown choice result:", result); }
+                 buttonsContainer.querySelectorAll('.choice-button').forEach(btn => btn.disabled = true);
+                 button.style.backgroundColor = '#06b6d4';
+
+                 const displayOutcomeAndProceed = (nextSceneIndex = -1) => {
+                     if (outcomeTextElement && outcomeText) {
+                         outcomeTextElement.textContent = outcomeText;
+                         outcomeTextElement.style.opacity = 0; outcomeTextElement.classList.remove('hidden');
+                         setTimeout(() => {
+                             outcomeTextElement.classList.add('revealed'); outcomeTextElement.style.opacity = 1;
+                             setTimeout(() => {
+                                 isChoosing = false;
+                                 bodyElement.classList.remove('choice-active-padding');
+                                 if (nextSceneIndex !== -1) {
+                                     // Direct transition for final choice branches
+                                     transitionStep(currentChoiceIndex, nextSceneIndex);
+                                 } else {
+                                     // Allow manual advance for intermediate choices
+                                     allowAdvance(stepElement);
+                                 }
+                             }, 650); // Delay after showing outcome text
+                         }, 50); // Delay before showing outcome text
+                     } else {
+                          // If no outcome text, proceed after a short delay
+                          isChoosing = false;
+                          bodyElement.classList.remove('choice-active-padding');
+                          setTimeout(() => {
+                               if (nextSceneIndex !== -1) {
+                                   transitionStep(currentChoiceIndex, nextSceneIndex);
+                               } else {
+                                   allowAdvance(stepElement);
+                               }
+                          }, 500);
+                     }
+                 };
+
+                 // Handle final choice branching (now at index 28)
+                 if (currentChoiceIndex === 28) {
+                     if (result === 'escape') {
+                         displayOutcomeAndProceed(30); // Go to hopeful text (index 28 -> 30)
+                     } else if (result === 'wait') {
+                         // Define ending conditions
+                         const secretCondition = (choiceCounts['cautious_safe'] >= 1 && choiceCounts['observant'] >= 1 && choiceCounts['confused'] >= 1 && choiceCounts['gentle'] >= 1);
+                         const funnyCondition = (choiceCounts['curious'] >= 1 && choiceCounts['affectionate'] >= 1 && choiceCounts['annoyed'] >= 1 && choiceCounts['assertive'] >= 1);
+                         const activeScore = (choiceCounts['affectionate'] || 0) + (choiceCounts['assertive'] || 0) + (choiceCounts['persistent'] || 0) + (choiceCounts['curious'] || 0) + (choiceCounts['hopeful_home'] || 0) + (choiceCounts['worried'] || 0) + (choiceCounts['annoyed'] || 0);
+                         const passiveScore = (choiceCounts['observant'] || 0) + (choiceCounts['cautious'] || 0) + (choiceCounts['gentle'] || 0) + (choiceCounts['cautious_safe'] || 0) + (choiceCounts['confused'] || 0);
+
+                         if (secretCondition) {
+                             displayOutcomeAndProceed(32); // Go to Secret Ending (index 28 -> 32)
+                         } else if (funnyCondition) {
+                             displayOutcomeAndProceed(33); // Go to Funny Ending (index 28 -> 33)
+                         } else if (activeScore > passiveScore) {
+                             displayOutcomeAndProceed(31); // Go to Adaptation Ending (index 28 -> 31)
+                         } else {
+                             displayOutcomeAndProceed(29); // Go to Melancholic Minigame (index 28 -> 29)
+                         }
+                     }
+                 } else {
+                     // Handle other choices normally (show outcome, then allow advance)
+                     displayOutcomeAndProceed();
+                 }
+            }
+
+
+             function transitionToEndScreen() {
+                 stopAutoplay();
+                 const lastStep = steps[currentStepIndex];
+                 if(lastStep) {
+                    lastStep.classList.add('exiting');
+                    lastStep.classList.remove('active');
+                    lastStep.addEventListener('animationend', () => { lastStep.classList.add('hidden'); lastStep.classList.remove('exiting'); }, { once: true });
+                 } else { hideAllSteps(); }
+                 endScreen.classList.remove('hidden');
+                 setTimeout(() => { endScreen.classList.add('visible'); }, 50);
+                 canAdvance = false; isStoryActive = false; bodyElement.classList.remove('can-advance', 'static-effect', 'choice-active-padding');
+                 navigationControls.classList.add('hidden');
+                 if (soundsReady && backgroundSynth && Tone.Transport.state === 'started') {
+                     Tone.Transport.scheduleOnce(t => { backgroundSynth.volume.rampTo(-Infinity, 2.0, t); }, Tone.now());
+                     setTimeout(() => { if(Tone.Transport.state === 'started') Tone.Transport.stop(); }, 2100);
+                 }
+                 stopEerieHum();
+             }
+
+             function restartStory() {
+                stopAutoplay();
+                if(soundsReady && synths.click) synths.click.triggerAttackRelease('C5', '8n');
+                endScreen.classList.remove('visible');
+                if (soundsReady) {
+                    stopEerieHum();
+                    if (Tone.Transport.state === 'started') {
+                        try { Tone.Transport.stop(); Tone.Transport.cancel(); }
+                        catch(e) { console.error("Error stopping transport:", e); }
+                    }
+                    if (backgroundSynth) { backgroundSynth.volume.value = -30; }
+                }
+                setTimeout(() => {
+                    initializeStory();
+                }, 1500);
+            }
+
+            function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [array[i], array[j]] = [array[j], array[i]]; } }
+            function updateProgressBar() { const progress = totalSteps > 0 ? ((currentStepIndex + 1) / totalSteps) * 100 : 0; progressBar.style.width = `${Math.max(0, Math.min(100, progress))}%`; }
+            function showControlsHint() { clearTimeout(hintTimeout); controlsHint.classList.remove('opacity-0'); hintTimeout = setTimeout(hideControlsHint, 4000); }
+            function hideControlsHint() { controlsHint.classList.add('opacity-0'); }
+
+            function startAutoplay() {
+                if (isAutoplaying) return;
+                isAutoplaying = true;
+                autoplayButton.textContent = "Stop";
+                if (canAdvance && !isChoosing && !currentMinigame) {
+                    advanceStory();
+                }
+            }
+
+            function stopAutoplay() {
+                if (!isAutoplaying) return;
+                isAutoplaying = false;
+                if (autoplayIntervalId) {
+                    clearTimeout(autoplayIntervalId);
+                    autoplayIntervalId = null;
+                }
+                autoplayButton.textContent = "Autoplay";
+            }
+
+            function toggleAutoplay() {
+                if (isAutoplaying) {
+                    stopAutoplay();
+                } else {
+                    startAutoplay();
+                }
+            }
+
+            function updateNavButtonStates() {
+                prevButton.disabled = currentStepIndex <= 0;
+                // Disable next if it's the final scene OR if waiting for interaction
+                nextButton.disabled = currentStepIndex >= totalSteps - 1 || !canAdvance || isChoosing;
+            }
+
+            titleScreen.addEventListener('click', () => {
+                startStory();
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (!isStoryActive && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); startStory(); return; }
+                if (isStoryActive && canAdvance && !isChoosing) {
+                    if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight') {
+                        stopAutoplay();
+                        e.preventDefault(); advanceStory();
+                    } else if (e.code === 'ArrowLeft') {
+                        stopAutoplay();
+                        e.preventDefault(); previousStory();
+                    }
+                }
+                if ((isStoryActive || endScreen.classList.contains('visible')) && e.code === 'Escape') {
+                    restartStory();
+                }
+            });
+            bodyElement.addEventListener('click', (e) => {
+                const isInteractive = e.target.closest('button, a, .scene-text, #endScreen, .minigame-container, .choice-container-dynamic');
+                if (isInteractive) { return; }
+                if (isStoryActive && canAdvance && !isChoosing) {
+                    stopAutoplay();
+                    advanceStory();
+                }
+            });
+            restartButton.addEventListener('click', restartStory);
+            prevButton.addEventListener('click', previousStory);
+            nextButton.addEventListener('click', () => {
+                if (canAdvance && !isChoosing) {
+                    stopAutoplay();
+                    advanceStory();
+                }
+            });
+            autoplayButton.addEventListener('click', toggleAutoplay);
+
+             initializeStory();
+
+           } catch (error) {
+               console.error("!!!!!!!!! Critical Error during DOMContentLoaded setup !!!!!!!!!!", error);
+               const overlay = document.getElementById('loadingOverlay');
+               if (overlay) { overlay.innerHTML = `<div style="color: red; text-align: center; padding: 20px;"><h2>Error Loading Story</h2><p>A critical error occurred. Please check the console (F12) for details.</p><p>${error.message}</p></div>`; overlay.style.opacity = '1'; }
+           }
+        });
+
+        document.addEventListener('error', (e) => { if (e.target.tagName === 'IMG') { console.warn(`Failed to load image: ${e.target.src}. Placeholder used.`); } }, true);
+
+    </script>
+
+</body>
+</html>
